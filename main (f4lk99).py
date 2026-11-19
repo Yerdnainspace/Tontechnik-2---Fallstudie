@@ -1,122 +1,196 @@
+# Tontechnik 2 - Praxisproblem 1 - Gruppe 4
+# Raumimpulsantwort RIR_C, Raumvolumen 6000 m^3
 
-"""Praxisproblem 1, Tontechnik 2: einfache Auswertung einer Raumimpulsantwort."""
-
-from pathlib import Path
-from math import gcd
 import numpy as np
-import soundfile as sf
 import matplotlib.pyplot as plt
+import soundfile as sf
 from scipy.signal import fftconvolve, resample_poly
+from math import gcd
+from pathlib import Path
 
-# 1. Eigene Gruppe und angenommene Hoerentfernung fuer die STI-Schaetzung
-gruppe = 1  # HIER 1 bis 6 eintragen
-abstand = 10.0  # Meter; angenommener Abstand Quelle-Hoerer
 
-raeume = {
-    1: ("RIR_A.wav", 1560),
-    2: ("RIR_B.wav", 8000),
-    3: ("RIR_F.wav", 18000),
-    4: ("RIR_C.wav", 6000),
-    5: ("RIR_E.wav", 1140),
-    6: ("RIR_D.wav", 910),
-}
+# 1. Raumimpulsantwort laden
 
-# 2. RIR laden (WAV-Dateien vorher aus dem ZIP entpacken)
 ordner = Path(__file__).resolve().parent
-dateiname, volumen = raeume[gruppe]
-treffer = list(ordner.rglob(dateiname))
-if not treffer:
-    raise FileNotFoundError(f"{dateiname} nicht gefunden. ZIP bitte entpacken.")
+datei = ordner / "Raumimpulsantworten" / "RIR_C.wav"
 
-h, fs = sf.read(treffer[0])
+volumen = 6000
+h, fs = sf.read(datei)
+
 if h.ndim == 2:
-    h = h[:, 0]  # Nur einen Kanal der RIR verwenden
+    h = h[:, 0]  # Bei Stereo nur ersten Kanal verwenden
 
-# Vorlauf entfernen: erster deutlicher Ausschlag bei 10 % des Spitzenwerts
-start = np.where(np.abs(h) >= 0.1 * np.max(np.abs(h)))[0][0]
+h = h - np.mean(h)
+
+# Beginn der Impulsantwort bestimmen
+start = np.where(np.abs(h) >= 0.05 * np.max(np.abs(h)))[0][0]
 h = h[start:]
+
 zeit = np.arange(len(h)) / fs
 
-# 3. Schroeder-Integration: Schallenergie vom Ende her aufsummieren
-energie = np.cumsum((h**2)[::-1])[::-1]
-pegel = 10 * np.log10(np.maximum(energie / energie[0], 1e-12))
+print("Gruppe 4 - RIR_C.wav")
+print("Raumvolumen:", volumen, "m^3")
+print("Abtastrate:", fs, "Hz")
+print("Signallaenge:", round(len(h) / fs, 2), "s")
+
+
+# 2. Nachhallzeit mit Schroeder-Integration
+
+# Wir betrachten die ersten 1,5 Sekunden nach dem Impuls.
+auswertezeit = 1.5
+anzahl = int(auswertezeit * fs)
+
+h_kurz = h[:anzahl]
+t_kurz = np.arange(len(h_kurz)) / fs
+
+# Rauschleistung am Ende der Aufnahme abschaetzen
+rauschen = np.mean(h[-int(0.5 * fs):] ** 2)
+
+# Energie von hinten aufsummieren
+energie = np.cumsum((h_kurz ** 2)[::-1])[::-1]
+
+# Geschaetzten Rauschanteil abziehen
+energie = energie - rauschen * np.arange(len(h_kurz), 0, -1)
+energie = np.maximum(energie, 1e-15)
+
+# Energie in Dezibel umrechnen
+pegel = 10 * np.log10(energie / energie[0])
+
 
 def nachhallzeit(oben, unten):
     bereich = (pegel <= oben) & (pegel >= unten)
-    steigung, _ = np.polyfit(zeit[bereich], pegel[bereich], 1)
-    return -60 / steigung  # Auf einen Abfall um 60 dB hochrechnen
 
-t20 = nachhallzeit(-5, -25)
-t30 = nachhallzeit(-5, -35)
-t60 = t30  # T30 ist hier unsere T60-Schaetzung
+    steigung, achsenabschnitt = np.polyfit(
+        t_kurz[bereich], pegel[bereich], 1
+    )
 
-# 4. C50 und C80: Energie vor und nach der jeweiligen Zeitgrenze
+    t60 = -60 / steigung
 
-def klarheit(ms):
-    grenze = round(ms / 1000 * fs)
-    frueh = np.sum(h[:grenze] ** 2)
-    spaet = np.sum(h[grenze:] ** 2)
-    return 10 * np.log10(frueh / spaet)
+    return t60, steigung, achsenabschnitt
+
+
+t20, _, _ = nachhallzeit(-5, -25)
+t30, m30, b30 = nachhallzeit(-5, -35)
+
+# T30 als Schaetzung fuer T60
+t60 = t30
+
+
+# 3. C50 und C80 berechnen
+
+def klarheit(grenze_ms):
+    grenze = int(grenze_ms / 1000 * fs)
+
+    energie_frueh = np.sum(h[:grenze] ** 2)
+    energie_spaet = np.sum(h[grenze:] ** 2)
+
+    c = 10 * np.log10(energie_frueh / energie_spaet)
+
+    return c
+
 
 c50 = klarheit(50)
 c80 = klarheit(80)
 
-# 5. STI nach der in der Aufgabenstellung genannten ALcons-Gleichung
-# Hallradius angenaehert fuer eine ungerichtete Schallquelle und diffuses Hallfeld.
+
+# 4. Sprachverstaendlichkeit (STI)
+
+# Hallradius mit Raumvolumen und Nachhallzeit abschaetzen
 hallradius = 0.057 * np.sqrt(volumen / t60)
-alcons = 0.625 * (abstand / hallradius)**2 * t60  # Prozentwert
-sti_roh = 1 - 0.45 * np.log10(alcons)  # Farrell-Becker
-sti = np.clip(sti_roh, 0, 1)
 
-print(f"Gruppe {gruppe} | Raumvolumen: {volumen} m³")
-print(f"T20: {t20:.2f} s | T30 / T60-Schaetzung: {t30:.2f} s")
-print(f"C50: {c50:.2f} dB | C80: {c80:.2f} dB")
+print("\n--- Ergebnisse ---")
+print(f"T20: {t20:.2f} s")
+print(f"T30 / T60: {t30:.2f} s")
+print(f"C50: {c50:.2f} dB")
+print(f"C80: {c80:.2f} dB")
 print(f"Hallradius: {hallradius:.2f} m")
-print(f"Bei {abstand:g} m: ALcons = {alcons:.2f} %, STI ≈ {sti:.2f}")
-if sti != sti_roh:
-    print("Hinweis: STI-Rohwert ausserhalb 0 bis 1; Naeherung hier unzuverlaessig.")
 
-# 6. Zwei einfache Diagramme speichern und anzeigen
-plt.figure(figsize=(10, 4))
+# STI fuer zwei angenommene Entfernungen
+for abstand in [5, 12]:
+
+    alcons = 0.625 * (abstand / hallradius) ** 2 * t60
+
+    sti = 1 - 0.45 * np.log10(alcons)
+
+    print(f"\nAbstand: {abstand} m")
+    print(f"ALcons: {alcons:.2f} %")
+    print(f"STI: {sti:.2f} (Naeherung)")
+
+
+# 5. Diagramme darstellen
+
+plt.figure(figsize=(11, 4))
+
+# Raumimpulsantwort
 plt.subplot(1, 2, 1)
 plt.plot(zeit, h)
-plt.xlabel("Zeit ab Impulsbeginn (s)")
+plt.title("Raumimpulsantwort RIR_C")
+plt.xlabel("Zeit (s)")
 plt.ylabel("Amplitude")
-plt.title("Raumimpulsantwort")
+plt.grid(True)
+
+# Energieabklingkurve
 plt.subplot(1, 2, 2)
-plt.plot(zeit, pegel)
-plt.ylim(-70, 0)
-plt.xlabel("Zeit ab Impulsbeginn (s)")
-plt.ylabel("Energiepegel (dB)")
-plt.title("Schroeder-Abklingkurve")
+plt.plot(t_kurz, pegel, label="Schroeder-Kurve")
+plt.plot(t_kurz, m30 * t_kurz + b30, "--", label="T30-Gerade")
+
+plt.title("Energieabklingkurve")
+plt.xlabel("Zeit (s)")
+plt.ylabel("Pegel (dB)")
+plt.ylim(-60, 0)
+plt.grid(True)
+plt.legend()
+
 plt.tight_layout()
-plt.savefig(ordner / "auswertung.png", dpi=150)
+plt.savefig(ordner / "gruppe4_diagramme.png")
 plt.show()
 
-# 7. Auralisation: trockene Dateien sprache.wav und musik.wav benoetigt
-# "nah" = mehr Direktschall, "fern" = weniger Direktschall.
-# Das simuliert nur einen Nahe-/Ferneindruck, keine exakte Entfernung in Metern.
-for art in ("sprache", "musik"):
-    datei = ordner / f"{art}.wav"
-    if not datei.exists():
-        print(f"{datei.name} fehlt: Auralisation dafuer uebersprungen.")
+
+# 6. Auralisation durch Faltung
+
+# Trockene Sprache und Musik werden im Hauptordner erwartet.
+# Falls die Dateien fehlen, wird dieser Teil uebersprungen.
+
+for name in ["sprache", "musik"]:
+
+    audio_datei = ordner / (name + ".wav")
+
+    if not audio_datei.exists():
+        print(f"\n{name}.wav nicht gefunden.")
         continue
 
-    trocken, audio_fs = sf.read(datei)
+    trocken, audio_fs = sf.read(audio_datei)
+
     if trocken.ndim == 2:
-        trocken = trocken.mean(axis=1)  # Einfache Mono-Auswertung
+        trocken = np.mean(trocken, axis=1)
 
-    # Abtastraten muessen bei der Faltung gleich sein.
+    # Raumimpulsantwort auf Abtastrate der Aufnahme bringen
     faktor = gcd(fs, audio_fs)
-    raum = resample_poly(h, audio_fs // faktor, fs // faktor)
-    direktschall_ende = max(1, round(0.005 * audio_fs))
+    h_audio = resample_poly(
+        h, audio_fs // faktor, fs // faktor
+    )
 
-    for name, verstaerkung in (("nah", 2.0), ("fern", 0.5)):
-        impuls = raum.copy()
-        impuls[:direktschall_ende] *= verstaerkung
-        ergebnis = fftconvolve(trocken, impuls)
-        spitze = np.max(np.abs(ergebnis))
-        if spitze > 0:
-            ergebnis = 0.95 * ergebnis / spitze  # Uebersteuerung vermeiden
-        sf.write(ordner / f"{art}_{name}.wav", ergebnis, audio_fs)
-        print(f"Erzeugt: {art}_{name}.wav")
+    # Zwei verschiedene Naehe-/Ferneindruecke
+    for variante, verstaerkung in [("nah", 1.8), ("fern", 0.5)]:
+
+        h_var = h_audio.copy()
+
+        # Fruehen Schallanteil veraendern
+        direkt = int(0.005 * audio_fs)
+        h_var[:direkt] *= verstaerkung
+
+        # Faltung
+        ergebnis = fftconvolve(trocken, h_var)
+
+        # Pegel normalisieren
+        maximal = np.max(np.abs(ergebnis))
+
+        if maximal > 0:
+            ergebnis = 0.95 * ergebnis / maximal
+
+        # Neue WAV-Datei speichern
+        ausgabe = ordner / (name + "_" + variante + ".wav")
+
+        sf.write(ausgabe, ergebnis, audio_fs)
+
+        print("Gespeichert:", ausgabe.name)
