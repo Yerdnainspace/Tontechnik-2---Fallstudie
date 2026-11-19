@@ -12,7 +12,7 @@ from pathlib import Path
 # 1. Raumimpulsantwort laden
 
 ordner = Path(__file__).resolve().parent
-datei = ordner / "Raumimpulsantworten" / "RIR_C.wav"
+datei = ordner / "RIR_C.wav"
 
 volumen = 6000
 h, fs = sf.read(datei)
