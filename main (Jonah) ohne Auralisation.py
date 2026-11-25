@@ -1,0 +1,171 @@
+"""Tontechnik 2 – Praxisproblem 1, Gruppe 4.
+Benötigt NumPy, Matplotlib und scipy.io.wavfile.
+Für die optionale Wiedergabe wird zusätzlich sounddevice benötigt.
+"""
+
+from pathlib import Path
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.io import wavfile
+
+
+# 1. Einstellungen und Dateipfade
+
+projekt_ordner = Path(__file__).resolve().parent
+rir_datei = projekt_ordner / "RIR_C.wav"
+audio_ordner = projekt_ordner / "Ergänzendes Material"
+
+raumvolumen = 6000                      # m³, gilt für RIR_C
+hoerabstaende = [5, 12]                 # m, nur für die STI-Näherung
+analyse_dauer = 1.5                     # s, Ausschnitt für die Nachhallauswertung
+audio_abspielen = True
+
+
+# Eine Hilfsfunktion bleibt: WAV-Dateien werden an mehreren Stellen eingelesen.
+def wav_lesen(datei):
+    # Ganzzahlen vor dem Rechnen in Gleitkommazahlen umwandeln.
+    abtastrate, signal = wavfile.read(datei)
+    datentyp = signal.dtype
+    signal = signal.astype(float)
+
+    if datentyp == np.uint8:
+        signal = (signal - 128) / 128
+    elif np.issubdtype(datentyp, np.signedinteger):
+        signal = signal / float(-np.iinfo(datentyp).min)
+
+    if signal.size == 0 or not np.all(np.isfinite(signal)):
+        raise ValueError(f"Leere oder ungültige WAV-Datei: {datei.name}")
+    return abtastrate, signal
+
+
+# 2. Raumimpulsantwort laden und ihren Beginn bestimmen
+
+abtastrate, impulsantwort = wav_lesen(rir_datei)
+
+if impulsantwort.ndim == 2:
+    impulsantwort = impulsantwort[:, 0]  # Bei der RIR nur Kanal 1 verwenden.
+
+impulsantwort = impulsantwort - np.mean(impulsantwort)
+spitzenwert = np.max(np.abs(impulsantwort))
+if spitzenwert == 0:
+    raise ValueError("Die Raumimpulsantwort enthält kein Signal.")
+
+# Erste Überschreitung von 5 % des Spitzenwerts als Ankunft schätzen.
+startschwelle = 0.05 * spitzenwert
+startposition = np.flatnonzero(np.abs(impulsantwort) >= startschwelle)[0]
+impulsantwort = impulsantwort[startposition:]
+zeit_rir = np.arange(len(impulsantwort)) / abtastrate
+
+
+# 3. Schroeder-Kurve: verbleibende Energie rückwärts aufsummieren
+
+analyse_signal = impulsantwort[:round(analyse_dauer * abtastrate)]
+zeit_analyse = np.arange(len(analyse_signal)) / abtastrate
+
+# Annahme: Die letzten 0,5 s der vollständigen RIR enthalten überwiegend Rauschen.
+anzahl_rauschwerte = max(1, round(0.5 * abtastrate))
+rauschleistung = np.mean(impulsantwort[-anzahl_rauschwerte:] ** 2)
+
+energie = np.cumsum((analyse_signal ** 2)[::-1])[::-1]
+verbleibende_werte = np.arange(len(analyse_signal), 0, -1)
+energie = energie - rauschleistung * verbleibende_werte
+
+if energie[0] <= 0:
+    raise ValueError("Die Rauschkorrektur lässt keine positive Gesamtenergie übrig.")
+
+# Anfang auf 0 dB beziehen; den Logarithmus von null/negativen Werten vermeiden.
+energie_db = 10 * np.log10(np.maximum(energie, 1e-15) / energie[0])
+
+
+# 4. T10, T20 und T30: Geraden an verschiedene Abklingbereiche anpassen
+# Jede Zeit wird auf einen Energieabfall von 60 dB extrapoliert.
+
+bereich_t10 = (energie_db <= -5) & (energie_db >= -15)
+bereich_t20 = (energie_db <= -5) & (energie_db >= -25)
+bereich_t30 = (energie_db <= -5) & (energie_db >= -35)
+
+for bereich in [bereich_t10, bereich_t20, bereich_t30]:
+    if np.count_nonzero(bereich) < 2:
+        raise ValueError("Zu wenige Werte für die Nachhallauswertung.")
+
+steigung_t10, offset_t10 = np.polyfit(zeit_analyse[bereich_t10], energie_db[bereich_t10], 1)
+steigung_t20, offset_t20 = np.polyfit(zeit_analyse[bereich_t20], energie_db[bereich_t20], 1)
+steigung_t30, offset_t30 = np.polyfit(zeit_analyse[bereich_t30], energie_db[bereich_t30], 1)
+
+if steigung_t10 >= 0 or steigung_t20 >= 0 or steigung_t30 >= 0:
+    raise ValueError("Die Energieabklingkurve fällt nicht in allen Bereichen ab.")
+
+t10 = -60 / steigung_t10
+t20 = -60 / steigung_t20
+t30 = -60 / steigung_t30
+
+
+# 5. C50 und C80: Energie vor und nach 50 bzw. 80 ms vergleichen
+# Wie in der hochgeladenen Fassung: vollständige RIR, ohne Rauschkorrektur.
+
+grenze_50ms = round(0.050 * abtastrate)
+grenze_80ms = round(0.080 * abtastrate)
+
+energie_bis_50ms = np.sum(impulsantwort[:grenze_50ms] ** 2)
+energie_nach_50ms = np.sum(impulsantwort[grenze_50ms:] ** 2)
+energie_bis_80ms = np.sum(impulsantwort[:grenze_80ms] ** 2)
+energie_nach_80ms = np.sum(impulsantwort[grenze_80ms:] ** 2)
+
+if min(energie_bis_50ms, energie_nach_50ms, energie_bis_80ms, energie_nach_80ms) <= 0:
+    raise ValueError("Für C50/C80 müssen frühe und späte Energie positiv sein.")
+
+c50 = 10 * np.log10(energie_bis_50ms / energie_nach_50ms)
+c80 = 10 * np.log10(energie_bis_80ms / energie_nach_80ms)
+
+
+# 6. Ergebnisse und STI-Näherung aus den Formeln des Aufgabenblatts
+
+hallradius = 0.057 * np.sqrt(raumvolumen / t30)  # Un­gerichtete Quelle: Q = 1.
+
+print(f"Gruppe 4 – RIR_C – Raumvolumen: {raumvolumen} m³")
+print(f"T10: {t10:.2f} s")
+print(f"T20: {t20:.2f} s")
+print(f"T30: {t30:.2f} s")
+print(f"C50: {c50:.2f} dB")
+print(f"C80: {c80:.2f} dB")
+print(f"Hallradius: {hallradius:.2f} m")
+
+for abstand in hoerabstaende:
+    artikulationsverlust = 0.625 * (abstand / hallradius) ** 2 * t30
+    sti = 1 - 0.45 * np.log10(artikulationsverlust)
+    print(f"STI-Näherung bei {abstand} m: {sti:.2f}")
+
+# Die STI-Formel ist eine Modellschätzung, keine vollständige STI-Messung.
+# Rohwerte außerhalb 0...1 sind keine gültigen STI-Werte.
+
+
+# 7. Raumimpulsantwort und Abklingkurve darstellen
+
+abbildung, (diagramm_rir, diagramm_nachhall) = plt.subplots(1, 2, figsize=(12, 5))
+
+diagramm_rir.plot(zeit_rir, impulsantwort)
+diagramm_rir.set_title("Raumimpulsantwort RIR_C")
+diagramm_rir.set_xlabel("Zeit ab geschätzter Ankunft / s")
+diagramm_rir.set_ylabel("Amplitude")
+diagramm_rir.grid(True)
+
+diagramm_nachhall.plot(zeit_analyse, energie_db, color="black", label="Schroeder-Kurve")
+diagramm_nachhall.plot(zeit_analyse[bereich_t10], steigung_t10 * zeit_analyse[bereich_t10] + offset_t10,
+                       label=f"T10: {t10:.2f} s")
+diagramm_nachhall.plot(zeit_analyse[bereich_t20], steigung_t20 * zeit_analyse[bereich_t20] + offset_t20,
+                       label=f"T20: {t20:.2f} s")
+diagramm_nachhall.plot(zeit_analyse[bereich_t30], steigung_t30 * zeit_analyse[bereich_t30] + offset_t30,
+                       label=f"T30: {t30:.2f} s")
+diagramm_nachhall.set_title("Energieabklingkurve")
+diagramm_nachhall.set_xlabel("Zeit ab geschätzter Ankunft / s")
+diagramm_nachhall.set_ylabel("Energiepegel / dB")
+diagramm_nachhall.set_ylim(-60, 0)
+diagramm_nachhall.legend()
+diagramm_nachhall.grid(True)
+
+abbildung.tight_layout()
+abbildung.savefig(projekt_ordner / "pp1_diagramme.png", dpi=150)
+plt.show()  # Diagrammfenster schließen, um mit den Hörbeispielen fortzufahren.
+
+if __name__ == "__main__":
+    main()

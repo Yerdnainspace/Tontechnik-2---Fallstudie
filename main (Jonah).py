@@ -18,7 +18,6 @@ from scipy.io import wavfile
 
 ORDNER = Path(__file__).resolve().parent
 
-
 def lesen(pfad, erster_kanal=False):
     """PCM/Float-WAV als Float-Monosignal lesen; RIR nutzt Kanal 1."""
     fs, x = wavfile.read(pfad)
@@ -89,7 +88,8 @@ def main():
             raise ValueError("Die Energieabklingkurve fällt nicht ab.")
         fits.append((-60 / m, m, b))
     t20, t30 = fits[0][0], fits[1][0]
-    radius = 0.057 * np.sqrt(6000 / t30)
+    volumen = 6000
+    radius = 0.057 * np.sqrt(volumen / t30)
     print(f"Gruppe 4 – RIR_C.wav | 6000 m³ | {fs} Hz | {len(h)/fs:.2f} s")
     print(f"T20: {t20:.2f} s\nT30 / T60-Schätzung: {t30:.2f} s")
     for ms in (50, 80):
@@ -116,7 +116,7 @@ def main():
     fig.savefig(ORDNER / "pp1_diagramme.png", dpi=150)
 
     # Auralisation: erste 5 ms verändern, anschließend linear per FFT falten.
-    for name in ("RIR_GlassCupC"):
+    for name in ("RIR_Dustbin1C", "RIR_GlassCupC"):
         datei = ORDNER / "Ergänzendes Material" / f"{name}.wav"
         if not datei.exists():
             print(f"{datei.name} fehlt – Auralisation übersprungen.")
