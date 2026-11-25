@@ -164,4 +164,4 @@ diagramm_nachhall.grid(True)
 
 abbildung.tight_layout()
 abbildung.savefig(projekt_ordner / "pp1_diagramme.png", dpi=150)
-plt.show()  # Diagrammfenster schließen, um mit den Hörbeispielen fortzufahren.
+plt.show()
