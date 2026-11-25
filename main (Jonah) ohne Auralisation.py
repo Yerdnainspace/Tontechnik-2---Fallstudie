@@ -16,7 +16,7 @@ audio_ordner = projekt_ordner / "Ergänzendes Material"
 
 raumvolumen = 6000                      # m³, gilt für RIR_C
 hoerabstaende = [5, 12]                 # m, nur für die STI-Näherung
-analyse_dauer = 1.5                     # s, Ausschnitt für die Nachhallauswertung
+analyse_dauer = 4                     # s, Ausschnitt für die Nachhallauswertung
 audio_abspielen = True
 
 
@@ -144,7 +144,7 @@ abbildung, (diagramm_rir, diagramm_nachhall) = plt.subplots(1, 2, figsize=(12, 5
 
 diagramm_rir.plot(zeit_rir, impulsantwort)
 diagramm_rir.set_title("Raumimpulsantwort RIR_C")
-diagramm_rir.set_xlabel("Zeit ab geschätzter Ankunft / s")
+diagramm_rir.set_xlabel("Zeit / s")
 diagramm_rir.set_ylabel("Amplitude")
 diagramm_rir.grid(True)
 
@@ -155,10 +155,10 @@ diagramm_nachhall.plot(zeit_analyse[bereich_t20], steigung_t20 * zeit_analyse[be
                        label=f"T20: {t20:.2f} s")
 diagramm_nachhall.plot(zeit_analyse[bereich_t30], steigung_t30 * zeit_analyse[bereich_t30] + offset_t30,
                        label=f"T30: {t30:.2f} s")
-diagramm_nachhall.set_title("Energieabklingkurve")
-diagramm_nachhall.set_xlabel("Zeit ab geschätzter Ankunft / s")
+diagramm_nachhall.set_title("Schröder-Plot")
+diagramm_nachhall.set_xlabel("Zeit / s")
 diagramm_nachhall.set_ylabel("Energiepegel / dB")
-diagramm_nachhall.set_ylim(-60, 0)
+diagramm_nachhall.set_ylim(-120, 0)
 diagramm_nachhall.legend()
 diagramm_nachhall.grid(True)
 
