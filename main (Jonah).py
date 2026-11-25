@@ -113,11 +113,11 @@ def main():
     for a in ax:
         a.grid(True)
     fig.tight_layout()
-    fig.savefig(ORDNER / "pp1_numpy_diagramme.png", dpi=150)
+    fig.savefig(ORDNER / "pp1_diagramme.png", dpi=150)
 
     # Auralisation: erste 5 ms verändern, anschließend linear per FFT falten.
-    for name in ("sprache", "musik"):
-        datei = ORDNER / f"{name}.wav"
+    for name in ("RIR_GlassCupC"):
+        datei = ORDNER / "Ergänzendes Material" / f"{name}.wav"
         if not datei.exists():
             print(f"{datei.name} fehlt – Auralisation übersprungen.")
             continue
@@ -130,7 +130,7 @@ def main():
             h_var = h_audio.copy()
             h_var[:int(0.005 * audio_fs)] *= faktor
             nass = np.fft.irfft(trocken_fft * np.fft.rfft(h_var, nfft), nfft)[:laenge]
-            speichern(ORDNER / f"{name}_{variante}_numpy.wav", audio_fs, nass)
+            speichern(ORDNER / f"{name}_{variante}.wav", audio_fs, nass)
     plt.show()
 
 
