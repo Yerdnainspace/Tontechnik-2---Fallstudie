@@ -1,6 +1,5 @@
 """Tontechnik 2 – Praxisproblem 1, Gruppe 4.
 Benötigt NumPy, Matplotlib und scipy.io.wavfile.
-Für die optionale Wiedergabe wird zusätzlich sounddevice benötigt.
 """
 
 from pathlib import Path
@@ -166,6 +165,3 @@ diagramm_nachhall.grid(True)
 abbildung.tight_layout()
 abbildung.savefig(projekt_ordner / "pp1_diagramme.png", dpi=150)
 plt.show()  # Diagrammfenster schließen, um mit den Hörbeispielen fortzufahren.
-
-if __name__ == "__main__":
-    main()
