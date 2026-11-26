@@ -10,129 +10,222 @@ Die Nah-/Fernvarianten und der STI sind Näherungen wie im Ausgangscode.
 """
 
 from pathlib import Path
-
 import numpy as np
 import matplotlib.pyplot as plt
-import sounddevice as sd
 from scipy.io import wavfile
-
-ORDNER = Path(__file__).resolve().parent
-
-def lesen(pfad, erster_kanal=False):
-    """PCM/Float-WAV als Float-Monosignal lesen; RIR nutzt Kanal 1."""
-    fs, x = wavfile.read(pfad)
-    typ = x.dtype
-    x = x.astype(np.float64)
-    if typ == np.uint8:
-        x = (x - 128) / 128
-    elif np.issubdtype(typ, np.signedinteger):
-        x /= float(-np.iinfo(typ).min)
-    if x.ndim == 2:
-        x = x[:, 0] if erster_kanal else x.mean(axis=1)
-    if not x.size or not np.all(np.isfinite(x)):
-        raise ValueError(f"Leere oder ungültige Audiodaten: {pfad}")
-    return fs, x
+from scipy.signal import fftconvolve, resample
 
 
-def speichern(pfad, fs, x):
-    """Auf 95 % Spitzenpegel normieren und als 16-Bit-PCM speichern."""
-    peak = np.max(np.abs(x))
-    x = x * (0.95 / peak) if peak else x
-    wavfile.write(pfad, fs, np.rint(x * 32767).astype(np.int16))
-    print(f"Gespeichert: {pfad.name}")
-    sd.play(x, fs)
-    sd.wait()  # Jede Variante vollständig abspielen, bevor die nächste startet.
+# 1. Einstellungen und Dateipfade
+
+projekt_ordner = Path(__file__).resolve().parent
+rir_datei = projekt_ordner / "RIR_C.wav"
+audio_ordner = projekt_ordner / "Ergänzendes Material"
+
+raumvolumen = 6000                      # m³, gilt für RIR_C
+hoerabstaende = [5, 12]                 # m, nur für die STI-Näherung
+analyse_dauer = 4                     # s, Ausschnitt für die Nachhallauswertung
+audio_abspielen = True
 
 
-def abtastrate(x, alt, neu):
-    """Fourier-Resampling mit NumPy; hohe Frequenzen beim Kürzen entfernen.
+# Eine Hilfsfunktion bleibt: WAV-Dateien werden an mehreren Stellen eingelesen.
+def wav_lesen(datei):
+    # Ganzzahlen vor dem Rechnen in Gleitkommazahlen umwandeln.
+    abtastrate, signal = wavfile.read(datei)
+    datentyp = signal.dtype
+    signal = signal.astype(float)
 
-    Wie bei Fourier-Resampling üblich wird das Signal periodisch fortgesetzt.
-    Das unterscheidet sich vom Polyphasenfilter im Ausgangscode.
-    """
-    if alt == neu:
-        return x.copy()
-    n = max(1, round(len(x) * neu / alt))
-    gemeinsam = min(len(x), n)
-    spektrum = np.zeros(n // 2 + 1, dtype=complex)
-    spektrum[:gemeinsam // 2 + 1] = np.fft.rfft(x)[:gemeinsam // 2 + 1]
-    if gemeinsam % 2 == 0:
-        spektrum[gemeinsam // 2] *= 2 if n < len(x) else 0.5
-    return np.fft.irfft(spektrum, n=n) * n / len(x)
+    if datentyp == np.uint8:
+        signal = (signal - 128) / 128
+    elif np.issubdtype(datentyp, np.signedinteger):
+        signal = signal / float(-np.iinfo(datentyp).min)
 
-
-def main():
-    fs, h = lesen(ORDNER / "RIR_C.wav", erster_kanal=True)
-    h -= h.mean()
-    if not np.any(h):
-        raise ValueError("Die Impulsantwort enthält kein auswertbares Signal.")
-    h = h[np.flatnonzero(np.abs(h) >= 0.05 * np.max(np.abs(h)))[0]:]
-    zeit = np.arange(len(h)) / fs
-
-    # Schroeder-Integration mit Rauschkorrektur, wie im Original über 1,5 s.
-    kurz = h[:int(1.5 * fs)]
-    t = np.arange(len(kurz)) / fs
-    rauschen = np.mean(h[-max(1, int(0.5 * fs)):] ** 2)
-    energie = np.cumsum(kurz[::-1] ** 2)[::-1]
-    energie -= rauschen * np.arange(len(kurz), 0, -1)
-    if energie[0] <= 0:
-        raise ValueError("Keine nutzbare Abklingenergie nach Rauschkorrektur.")
-    pegel = 10 * np.log10(np.maximum(energie, 1e-15) / energie[0])
-    fits = []
-    for unten in (-25, -35):
-        bereich = (pegel <= -5) & (pegel >= unten)
-        if bereich.sum() < 2:
-            raise ValueError(f"Zu wenige Messwerte zwischen -5 und {unten} dB.")
-        m, b = np.polyfit(t[bereich], pegel[bereich], 1)
-        if m >= 0:
-            raise ValueError("Die Energieabklingkurve fällt nicht ab.")
-        fits.append((-60 / m, m, b))
-    t20, t30 = fits[0][0], fits[1][0]
-    volumen = 6000
-    radius = 0.057 * np.sqrt(volumen / t30)
-    print(f"Gruppe 4 – RIR_C.wav | 6000 m³ | {fs} Hz | {len(h)/fs:.2f} s")
-    print(f"T20: {t20:.2f} s\nT30 / T60-Schätzung: {t30:.2f} s")
-    for ms in (50, 80):
-        grenze = int(ms * fs / 1000)
-        frueh, spaet = np.sum(h[:grenze] ** 2), np.sum(h[grenze:] ** 2)
-        c = 10 * np.log10(frueh / spaet) if frueh > 0 and spaet > 0 else np.nan
-        print(f"C{ms}: {c:.2f} dB")
-    print(f"Hallradius: {radius:.2f} m")
-    for abstand in (5, 12):
-        alcons = 0.625 * (abstand / radius) ** 2 * t30
-        sti = 1 - 0.45 * np.log10(alcons)
-        print(f"{abstand} m: ALcons {alcons:.2f} %, STI {sti:.2f} (Näherung)")
-
-    fig, ax = plt.subplots(1, 2, figsize=(11, 4))
-    ax[0].plot(zeit, h)
-    ax[0].set(title="Raumimpulsantwort RIR_C", xlabel="Zeit (s)", ylabel="Amplitude")
-    ax[1].plot(t, pegel, label="Schroeder-Kurve")
-    ax[1].plot(t, fits[1][1] * t + fits[1][2], "--", label="T30-Gerade")
-    ax[1].set(title="Energieabklingkurve", xlabel="Zeit (s)", ylabel="Pegel (dB)", ylim=(-60, 0))
-    ax[1].legend()
-    for a in ax:
-        a.grid(True)
-    fig.tight_layout()
-    fig.savefig(ORDNER / "pp1_diagramme.png", dpi=150)
-
-    # Auralisation: erste 5 ms verändern, anschließend linear per FFT falten.
-    for name in ("RIR_Dustbin1C", "RIR_GlassCupC"):
-        datei = ORDNER / "Ergänzendes Material" / f"{name}.wav"
-        if not datei.exists():
-            print(f"{datei.name} fehlt – Auralisation übersprungen.")
-            continue
-        audio_fs, trocken = lesen(datei)
-        h_audio = abtastrate(h, fs, audio_fs)
-        laenge = len(trocken) + len(h_audio) - 1
-        nfft = 1 << (laenge - 1).bit_length()
-        trocken_fft = np.fft.rfft(trocken, nfft)
-        for variante, faktor in (("nah", 1.8), ("fern", 0.5)):
-            h_var = h_audio.copy()
-            h_var[:int(0.005 * audio_fs)] *= faktor
-            nass = np.fft.irfft(trocken_fft * np.fft.rfft(h_var, nfft), nfft)[:laenge]
-            speichern(ORDNER / f"{name}_{variante}.wav", audio_fs, nass)
-    plt.show()
+    if signal.size == 0 or not np.all(np.isfinite(signal)):
+        raise ValueError(f"Leere oder ungültige WAV-Datei: {datei.name}")
+    return abtastrate, signal
 
 
-if __name__ == "__main__":
-    main()
+# 2. Raumimpulsantwort laden und ihren Beginn bestimmen
+
+abtastrate, impulsantwort = wav_lesen(rir_datei)
+
+if impulsantwort.ndim == 2:
+    impulsantwort = impulsantwort[:, 0]  # Bei der RIR nur Kanal 1 verwenden.
+
+impulsantwort = impulsantwort - np.mean(impulsantwort)
+spitzenwert = np.max(np.abs(impulsantwort))
+if spitzenwert == 0:
+    raise ValueError("Die Raumimpulsantwort enthält kein Signal.")
+
+# Erste Überschreitung von 5 % des Spitzenwerts als Ankunft schätzen.
+startschwelle = 0.05 * spitzenwert
+startposition = np.flatnonzero(np.abs(impulsantwort) >= startschwelle)[0]
+impulsantwort = impulsantwort[startposition:]
+zeit_rir = np.arange(len(impulsantwort)) / abtastrate
+
+
+# 3. Schroeder-Kurve: verbleibende Energie rückwärts aufsummieren
+
+analyse_signal = impulsantwort[:round(analyse_dauer * abtastrate)]
+zeit_analyse = np.arange(len(analyse_signal)) / abtastrate
+
+# Annahme: Die letzten 0,5 s der vollständigen RIR enthalten überwiegend Rauschen.
+anzahl_rauschwerte = max(1, round(0.5 * abtastrate))
+rauschleistung = np.mean(impulsantwort[-anzahl_rauschwerte:] ** 2)
+
+energie = np.cumsum((analyse_signal ** 2)[::-1])[::-1]
+verbleibende_werte = np.arange(len(analyse_signal), 0, -1)
+energie = energie - rauschleistung * verbleibende_werte
+
+if energie[0] <= 0:
+    raise ValueError("Die Rauschkorrektur lässt keine positive Gesamtenergie übrig.")
+
+# Anfang auf 0 dB beziehen; den Logarithmus von null/negativen Werten vermeiden.
+energie_db = 10 * np.log10(np.maximum(energie, 1e-15) / energie[0])
+
+
+# 4. T10, T20 und T30: Geraden an verschiedene Abklingbereiche anpassen
+# Jede Zeit wird auf einen Energieabfall von 60 dB extrapoliert.
+
+bereich_t10 = (energie_db <= -5) & (energie_db >= -15)
+bereich_t20 = (energie_db <= -5) & (energie_db >= -25)
+bereich_t30 = (energie_db <= -5) & (energie_db >= -35)
+
+for bereich in [bereich_t10, bereich_t20, bereich_t30]:
+    if np.count_nonzero(bereich) < 2:
+        raise ValueError("Zu wenige Werte für die Nachhallauswertung.")
+
+steigung_t10, offset_t10 = np.polyfit(zeit_analyse[bereich_t10], energie_db[bereich_t10], 1)
+steigung_t20, offset_t20 = np.polyfit(zeit_analyse[bereich_t20], energie_db[bereich_t20], 1)
+steigung_t30, offset_t30 = np.polyfit(zeit_analyse[bereich_t30], energie_db[bereich_t30], 1)
+
+if steigung_t10 >= 0 or steigung_t20 >= 0 or steigung_t30 >= 0:
+    raise ValueError("Die Energieabklingkurve fällt nicht in allen Bereichen ab.")
+
+t10 = -60 / steigung_t10
+t20 = -60 / steigung_t20
+t30 = -60 / steigung_t30
+
+
+# 5. C50 und C80: Energie vor und nach 50 bzw. 80 ms vergleichen
+# Wie in der hochgeladenen Fassung: vollständige RIR, ohne Rauschkorrektur.
+
+grenze_50ms = round(0.050 * abtastrate)
+grenze_80ms = round(0.080 * abtastrate)
+
+energie_bis_50ms = np.sum(impulsantwort[:grenze_50ms] ** 2)
+energie_nach_50ms = np.sum(impulsantwort[grenze_50ms:] ** 2)
+energie_bis_80ms = np.sum(impulsantwort[:grenze_80ms] ** 2)
+energie_nach_80ms = np.sum(impulsantwort[grenze_80ms:] ** 2)
+
+if min(energie_bis_50ms, energie_nach_50ms, energie_bis_80ms, energie_nach_80ms) <= 0:
+    raise ValueError("Für C50/C80 müssen frühe und späte Energie positiv sein.")
+
+c50 = 10 * np.log10(energie_bis_50ms / energie_nach_50ms)
+c80 = 10 * np.log10(energie_bis_80ms / energie_nach_80ms)
+
+
+# 6. Ergebnisse und STI-Näherung aus den Formeln des Aufgabenblatts
+
+hallradius = 0.057 * np.sqrt(raumvolumen / t30)  # Un­gerichtete Quelle: Q = 1.
+
+print(f"Gruppe 4 – RIR_C – Raumvolumen: {raumvolumen} m³")
+print(f"T10: {t10:.2f} s")
+print(f"T20: {t20:.2f} s")
+print(f"T30: {t30:.2f} s")
+print(f"C50: {c50:.2f} dB")
+print(f"C80: {c80:.2f} dB")
+print(f"Hallradius: {hallradius:.2f} m")
+
+for abstand in hoerabstaende:
+    artikulationsverlust = 0.625 * (abstand / hallradius) ** 2 * t30
+    sti = 1 - 0.45 * np.log10(artikulationsverlust)
+    print(f"STI-Näherung bei {abstand} m: {sti:.2f}")
+
+# Die STI-Formel ist eine Modellschätzung, keine vollständige STI-Messung.
+# Rohwerte außerhalb 0...1 sind keine gültigen STI-Werte.
+
+
+# 7. Raumimpulsantwort und Abklingkurve darstellen
+
+abbildung, (diagramm_rir, diagramm_nachhall) = plt.subplots(1, 2, figsize=(12, 5))
+
+diagramm_rir.plot(zeit_rir, impulsantwort)
+diagramm_rir.set_title("Raumimpulsantwort RIR_C")
+diagramm_rir.set_xlabel("Zeit ab geschätzter Ankunft / s")
+diagramm_rir.set_ylabel("Amplitude")
+diagramm_rir.grid(True)
+
+diagramm_nachhall.plot(zeit_analyse, energie_db, color="black", label="Schroeder-Kurve")
+diagramm_nachhall.plot(zeit_analyse[bereich_t10], steigung_t10 * zeit_analyse[bereich_t10] + offset_t10,
+                       label=f"T10: {t10:.2f} s")
+diagramm_nachhall.plot(zeit_analyse[bereich_t20], steigung_t20 * zeit_analyse[bereich_t20] + offset_t20,
+                       label=f"T20: {t20:.2f} s")
+diagramm_nachhall.plot(zeit_analyse[bereich_t30], steigung_t30 * zeit_analyse[bereich_t30] + offset_t30,
+                       label=f"T30: {t30:.2f} s")
+diagramm_nachhall.set_title("Energieabklingkurve")
+diagramm_nachhall.set_xlabel("Zeit ab geschätzter Ankunft / s")
+diagramm_nachhall.set_ylabel("Energiepegel / dB")
+diagramm_nachhall.set_ylim(-120, 0)
+diagramm_nachhall.legend()
+diagramm_nachhall.grid(True)
+
+abbildung.tight_layout()
+abbildung.savefig(projekt_ordner / "pp1_diagramme.png", dpi=150)
+plt.show()  # Diagrammfenster schließen, um mit den Hörbeispielen fortzufahren.
+
+
+# 8. Optional: trockene Sprache und Musik mit dem Raumhall versehen
+# Beide WAV-Dateien werden im Unterordner "Ergänzendes Material" gesucht.
+# Die dort vorhandenen anderen RIRs ersetzen keine Sprach-/Musikaufnahme.
+
+for dateiname in ["RIR_Dustbin1C.wav", "RIR_IronBucket2.wav"]:
+    audio_datei = audio_ordner / dateiname
+    if not audio_datei.exists():
+        print(f"{dateiname} fehlt – zugehörige Hörbeispiele übersprungen.")
+        continue
+
+    audio_abtastrate, trockenes_signal = wav_lesen(audio_datei)
+    if trockenes_signal.ndim == 2:
+        trockenes_signal = np.mean(trockenes_signal, axis=1)
+
+    if not np.any(trockenes_signal):
+        raise ValueError(f"{dateiname} enthält kein Signal.")
+
+    # Die RIR bei Bedarf mit dem Fourier-Verfahren von SciPy umrechnen.
+    # Das Verfahren nimmt eine periodische Fortsetzung an; Randartefakte sind möglich.
+    raumfilter = impulsantwort.copy()
+    if audio_abtastrate != abtastrate:
+        neue_laenge = max(1, round(len(raumfilter) * audio_abtastrate / abtastrate))
+        raumfilter = resample(raumfilter, neue_laenge)
+
+    hoerbeispiele = []
+
+    # Nur den Anfang verändern: vereinfachter Nah-/Ferneindruck, keine Meter-Simulation.
+    for variante, anfangsfaktor in [("nah", 1.8), ("fern", 0.5)]:
+        veraenderter_filter = raumfilter.copy()
+        erste_5ms = round(0.005 * audio_abtastrate)
+        veraenderter_filter[:erste_5ms] *= anfangsfaktor
+
+        # SciPy übernimmt FFT, Spektrenmultiplikation und Rücktransformation.
+        # "full" erhält das vollständige Ergebnis einschließlich Nachhallende.
+        gefaltetes_signal = fftconvolve(trockenes_signal, veraenderter_filter, mode="full")
+        hoerbeispiele.append((variante, gefaltetes_signal))
+
+    # Gemeinsame Skalierung pro Aufnahme erhält Pegelunterschiede zwischen nah/fern.
+    gemeinsamer_spitzenwert = max(np.max(np.abs(signal)) for variante, signal in hoerbeispiele)
+    if gemeinsamer_spitzenwert == 0:
+        raise ValueError("Die Faltung liefert kein Signal.")
+    speicherfaktor = 0.95 / gemeinsamer_spitzenwert
+
+    for variante, signal in hoerbeispiele:
+        ausgabesignal = signal * speicherfaktor
+        ausgabedatei = projekt_ordner / f"{audio_datei.stem}_{variante}.wav"
+        pcm_signal = np.rint(ausgabesignal * 32767).astype(np.int16)
+        wavfile.write(ausgabedatei, audio_abtastrate, pcm_signal)
+        print(f"Gespeichert: {ausgabedatei.name}")
+
+        if audio_abspielen:
+            import sounddevice as sd
+            sd.play(ausgabesignal, audio_abtastrate)
+            sd.wait()
