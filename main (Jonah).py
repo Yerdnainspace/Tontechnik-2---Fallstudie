@@ -130,7 +130,7 @@ c80 = 10 * np.log10(energie_bis_80ms / energie_nach_80ms)
 
 # 6. Ergebnisse und STI-Näherung aus den Formeln des Aufgabenblatts
 
-hallradius = 0.057 * np.sqrt(raumvolumen / t30)  # Un­gerichtete Quelle: Q = 1.
+hallradius = 0.057 * np.sqrt(raumvolumen / t20)  # Un­gerichtete Quelle: Q = 1.
 
 print(f"Gruppe 4 – RIR_C – Raumvolumen: {raumvolumen} m³")
 print(f"T10: {t10:.2f} s | r = {r_t10:.6f}")
@@ -141,7 +141,7 @@ print(f"C80: {c80:.2f} dB")
 print(f"Hallradius: {hallradius:.2f} m")
 
 for abstand in hoerabstaende:
-    artikulationsverlust = 0.625 * (abstand / hallradius) ** 2 * t30
+    artikulationsverlust = 0.625 * (abstand / hallradius) ** 2 * t20
     sti = 1 - 0.45 * np.log10(artikulationsverlust)
     print(f"STI-Näherung bei {abstand} m: {sti:.2f}")
 
