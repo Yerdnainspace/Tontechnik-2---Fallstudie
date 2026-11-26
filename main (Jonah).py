@@ -106,6 +106,11 @@ t10 = -60 / steigung_t10
 t20 = -60 / steigung_t20
 t30 = -60 / steigung_t30
 
+# Wie gut folgt die Abklingkurve im jeweiligen Bereich einer Geraden?
+r_t10 = np.corrcoef(zeit_analyse[bereich_t10], energie_db[bereich_t10])[0, 1]
+r_t20 = np.corrcoef(zeit_analyse[bereich_t20], energie_db[bereich_t20])[0, 1]
+r_t30 = np.corrcoef(zeit_analyse[bereich_t30], energie_db[bereich_t30])[0, 1]
+
 
 # 5. C50 und C80: Energie vor und nach 50 bzw. 80 ms vergleichen
 # Wie in der hochgeladenen Fassung: vollständige RIR, ohne Rauschkorrektur.
@@ -130,9 +135,9 @@ c80 = 10 * np.log10(energie_bis_80ms / energie_nach_80ms)
 hallradius = 0.057 * np.sqrt(raumvolumen / t30)  # Un­gerichtete Quelle: Q = 1.
 
 print(f"Gruppe 4 – RIR_C – Raumvolumen: {raumvolumen} m³")
-print(f"T10: {t10:.2f} s")
-print(f"T20: {t20:.2f} s")
-print(f"T30: {t30:.2f} s")
+print(f"T10: {t10:.2f} s | r = {r_t10:.6f}")
+print(f"T20: {t20:.2f} s | r = {r_t20:.6f}")
+print(f"T30: {t30:.2f} s | r = {r_t30:.6f}")
 print(f"C50: {c50:.2f} dB")
 print(f"C80: {c80:.2f} dB")
 print(f"Hallradius: {hallradius:.2f} m")
@@ -152,7 +157,7 @@ abbildung, (diagramm_rir, diagramm_nachhall) = plt.subplots(1, 2, figsize=(12, 5
 
 diagramm_rir.plot(zeit_rir, impulsantwort)
 diagramm_rir.set_title("Raumimpulsantwort RIR_C")
-diagramm_rir.set_xlabel("Zeit ab geschätzter Ankunft / s")
+diagramm_rir.set_xlabel("Zeit / s")
 diagramm_rir.set_ylabel("Amplitude")
 diagramm_rir.grid(True)
 
@@ -163,8 +168,8 @@ diagramm_nachhall.plot(zeit_analyse[bereich_t20], steigung_t20 * zeit_analyse[be
                        label=f"T20: {t20:.2f} s")
 diagramm_nachhall.plot(zeit_analyse[bereich_t30], steigung_t30 * zeit_analyse[bereich_t30] + offset_t30,
                        label=f"T30: {t30:.2f} s")
-diagramm_nachhall.set_title("Energieabklingkurve")
-diagramm_nachhall.set_xlabel("Zeit ab geschätzter Ankunft / s")
+diagramm_nachhall.set_title("Schroeder-Plot")
+diagramm_nachhall.set_xlabel("Zeit / s")
 diagramm_nachhall.set_ylabel("Energiepegel / dB")
 diagramm_nachhall.set_ylim(-120, 0)
 diagramm_nachhall.legend()
