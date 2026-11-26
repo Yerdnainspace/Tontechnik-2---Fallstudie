@@ -21,8 +21,8 @@ rir_datei = projekt_ordner / "RIR_C.wav"
 audio_ordner = projekt_ordner / "Ergänzendes Material"
 
 raumvolumen = 6000                      # m³, gilt für RIR_C
-hoerabstaende = [5, 12]                 # m, nur für die STI-Näherung
-analyse_dauer = 4                     # s, Ausschnitt für die Nachhallauswertung
+hoerabstaende = [5, 10]                 # m, nur für die STI-Näherung
+analyse_dauer = 4                       # s, Ausschnitt für die Nachhallauswertung
 audio_abspielen = True
 
 
@@ -132,9 +132,9 @@ c80 = 10 * np.log10(energie_bis_80ms / energie_nach_80ms)
 # 6. Ergebnisse und STI-Näherung aus den Formeln des Aufgabenblatts
 
 print(f"Gruppe 4 – RIR_C – Raumvolumen: {raumvolumen} m³")
-print(f"T10: {t10:.2f} s | r = {r_t10:.4f}")
-print(f"T20: {t20:.2f} s | r = {r_t20:.4f}")
-print(f"T30: {t30:.2f} s | r = {r_t30:.4f}")
+print(f"T10: {t10:.4f} s | r = {r_t10:.4f}")
+print(f"T20: {t20:.4f} s | r = {r_t20:.4f}")
+print(f"T30: {t30:.4f} s | r = {r_t30:.4f}")
 print(f"C50: {c50:.2f} dB")
 print(f"C80: {c80:.2f} dB")
 print(f"Hallradius: {hallradius:.4f} m")
