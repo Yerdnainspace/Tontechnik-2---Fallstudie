@@ -1,12 +1,10 @@
-"""Praxisproblem 1, Gruppe 4 – Kurzfassung auf Basis von main (f4lk99).py.
+"""Praxisproblem 1, Gruppe 4 – Analyse eines Raumes (6000m³) anhand einer Impulsantwort
 
-Grundlagen: README.md, RIR_C.wav und gruppe4_diagramme.png im Projekt.
-Die vier WAVs in 'Ergänzendes Material' sind zusätzliche Impulsantworten;
-das Raumvolumen von 6000 m³ gilt hier nur für RIR_C.
-Abhängigkeiten: numpy, matplotlib, scipy (nur scipy.io.wavfile), sounddevice.
-Optional sprache.wav und musik.wav neben dieses Skript legen.
+Gruppenmitglieder: Jonah Fetahovic, Maximilian Falk Pitulle, Mario Contrino, Andrey Schaefer
+
+Die vier WAVs in 'Ergänzendes Material' sind zusätzliche Impulsantworten
+Abhängigkeiten: numpy, matplotlib, scipy
 Erzeugte Signale werden nach dem Speichern automatisch abgespielt.
-Die Nah-/Fernvarianten und der STI sind Näherungen wie im Ausgangscode.
 """
 
 from pathlib import Path
@@ -28,7 +26,7 @@ analyse_dauer = 4                     # s, Ausschnitt für die Nachhallauswertun
 audio_abspielen = True
 
 
-# Eine Hilfsfunktion bleibt: WAV-Dateien werden an mehreren Stellen eingelesen.
+# Eine Hilfsfunktion für WAV-Dateien
 def wav_lesen(datei):
     # Ganzzahlen vor dem Rechnen in Gleitkommazahlen umwandeln.
     abtastrate, signal = wavfile.read(datei)
