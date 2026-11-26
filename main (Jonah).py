@@ -109,6 +109,7 @@ r_t10 = np.corrcoef(zeit_analyse[bereich_t10], energie_db[bereich_t10])[0, 1]
 r_t20 = np.corrcoef(zeit_analyse[bereich_t20], energie_db[bereich_t20])[0, 1]
 r_t30 = np.corrcoef(zeit_analyse[bereich_t30], energie_db[bereich_t30])[0, 1]
 
+hallradius = 0.057 * np.sqrt(raumvolumen / t20)
 
 # 5. C50 und C80: Energie vor und nach 50 bzw. 80 ms vergleichen
 # Wie in der hochgeladenen Fassung: vollständige RIR, ohne Rauschkorrektur.
@@ -127,10 +128,7 @@ if min(energie_bis_50ms, energie_nach_50ms, energie_bis_80ms, energie_nach_80ms)
 c50 = 10 * np.log10(energie_bis_50ms / energie_nach_50ms)
 c80 = 10 * np.log10(energie_bis_80ms / energie_nach_80ms)
 
-
 # 6. Ergebnisse und STI-Näherung aus den Formeln des Aufgabenblatts
-
-hallradius = 0.057 * np.sqrt(raumvolumen / t20)  # Un­gerichtete Quelle: Q = 1.
 
 print(f"Gruppe 4 – RIR_C – Raumvolumen: {raumvolumen} m³")
 print(f"T10: {t10:.2f} s | r = {r_t10:.6f}")
