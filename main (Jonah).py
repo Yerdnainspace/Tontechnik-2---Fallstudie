@@ -140,7 +140,7 @@ print(f"C80: {c80:.2f} dB")
 print(f"Hallradius: {hallradius:.4f} m")
 
 for abstand in hoerabstaende:
-    artikulationsverlust = 0.625 * (abstand / hallradius) ** 2 * t20
+    artikulationsverlust = 0.652 * (abstand / hallradius) ** 2 * t20
     sti = 1 - 0.45 * np.log10(artikulationsverlust)
     print(f"STI-Näherung bei {abstand} m: {sti:.2f}")
 
