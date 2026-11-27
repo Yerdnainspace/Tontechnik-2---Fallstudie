@@ -132,7 +132,7 @@ print(f"Hallradius: {hallradius:.2f} m")
 for abstand in [5, 12]:
 
     # Artikulationsverlust in Prozent
-    alcons = 0.625 * (abstand / hallradius) ** 2 * t60
+    alcons = 0.652 * (abstand / hallradius) ** 2 * t60
 
     # STI nach Farrell-Becker
     sti = 1 - 0.45 * np.log10(alcons)
