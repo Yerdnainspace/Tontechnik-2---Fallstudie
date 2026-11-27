@@ -22,7 +22,7 @@ audio_ordner = projekt_ordner / "Ergänzendes Material"
 
 raumvolumen = 6000                      # m³, gilt für RIR_C
 hoerabstaende = [5, 10]                 # m, nur für die STI-Näherung
-analyse_dauer = 4                       # s, Ausschnitt für die Nachhallauswertung
+analyse_dauer = 1.5                       # s, Ausschnitt für die Nachhallauswertung
 audio_abspielen = True
 
 
