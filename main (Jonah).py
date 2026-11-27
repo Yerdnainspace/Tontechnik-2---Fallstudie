@@ -21,7 +21,7 @@ rir_datei = projekt_ordner / "RIR_C.wav"
 audio_ordner = projekt_ordner / "Ergänzendes Material"
 
 raumvolumen = 6000                      # m³, gilt für RIR_C
-hoerabstaende = [5, 10,15]                 # m, nur für die STI-Näherung
+hoerabstaende = [5, 10, 15]                 # m, nur für die STI-Näherung
 analyse_dauer = 1.5                       # s, Ausschnitt für die Nachhallauswertung
 audio_abspielen = True
 
